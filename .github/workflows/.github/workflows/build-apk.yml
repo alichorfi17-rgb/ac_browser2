@@ -1,0 +1,80 @@
+name: Build AC Browser APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Auto-extract project zip if present (recovery mode)
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Found zip: $ZIP_FILE — extracting..."
+            mkdir -p _extracted
+            unzip -o "$ZIP_FILE" -d _extracted
+            CONTENTS=$(ls _extracted)
+            COUNT=$(ls _extracted | wc -l)
+            if [ "$COUNT" -eq 1 ] && [ -d "_extracted/$CONTENTS" ]; then
+              cp -r "_extracted/$CONTENTS/." .
+            else
+              cp -r _extracted/. .
+            fi
+            rm -rf _extracted
+            rm -f "$ZIP_FILE"
+            echo "Extraction complete. Top-level contents:"
+            ls -la
+          else
+            echo "No zip file found, using repository contents as-is."
+          fi
+
+      - name: Verify project structure
+        run: |
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "::error::pubspec.yaml not found at repository root."
+            ls -la
+            exit 1
+          fi
+          if [ ! -d "lib" ]; then
+            echo "::error::lib/ directory not found."
+            exit 1
+          fi
+          if [ ! -d "android" ]; then
+            echo "::error::android/ directory not found."
+            exit 1
+          fi
+          echo "✅ Project structure verified."
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ac-browser-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
